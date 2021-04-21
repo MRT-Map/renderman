@@ -1,4 +1,5 @@
 import renderer
+import env
 from threading import Thread
 import flask
 import flask_cors
@@ -9,15 +10,18 @@ import cloudinary.api
 import os
 import io
 import gc
+import sys
 import time
 import psutil
 from colorama import Fore, Style, init
+from multiprocessing import Process
+import multiprocessing
 init()
 
 cloudinary.config( 
     cloud_name = "mrt-map", 
     api_key = "128387842344516", 
-    api_secret = os.environ['cloudinary']
+    api_secret = env.getenv("cloudinary")
 )
 
 def readFile(dir):
@@ -33,37 +37,59 @@ def writeFile(dir, value):
         json.dump(value, f, indent=0)
         f.close()
 
+def task(toRender, p, n, s):
+        gc.collect()
+        tiles = renderer.render(p, n, s, 7, 7, 32, saveImages=False, verbosityLevel=1, tiles=toRender)
+        gc.collect()
+        for tileName, tile in tiles.items():
+            tileBytes = io.BytesIO()
+            tile.save(tileBytes, format='PNG')
+            tileBytes.name = tileName.replace(", ", "_")+".png"
+            cloudinary.uploader.upload(tileBytes.getvalue(), public_id=tileName.replace(", ", "_"), overwrite=True, invalidate=True)
+            print("Uploaded " + tileName)
+
+def splitList(l, g):
+        r = []
+        for i in range(g):
+            r.append([])
+        p = 0
+        li = 0
+        while p < len(l):
+            r[li].append(l[p])
+            li = 0 if li == len(r)-1 else li + 1
+            p += 1
+        return r
+
 def render():
-    p = json.loads(requests.get("https://api.npoint.io/5fcc99fc5028693a9569").text)
-    n = json.loads(requests.get("https://api.npoint.io/0db5b7881915de645ced").text)
-    s = readFile("skins/default.json")
-    #xMax, xMin, yMax, yMin = renderer.tools.plaJson_findEnds(p, n)
-    #tileList = renderer.tools.lineToTiles([(xMax,yMax),(xMin,yMax),(xMax,yMin),(xMin,yMin)], 5, 8, 32)
-    indexNew = {}
-    #for t in tileList:
-    gc.collect()
-    tiles = renderer.render(p, n, s, 5, 8, 32, saveImages=False)
-    gc.collect()
-    for tileName, tile in tiles.items():
-        tileBytes = io.BytesIO()
-        tile.save(tileBytes, format='PNG')
-        tileBytes.name = tileName.replace(", ", "_")+".png"
-        r = cloudinary.uploader.upload(tileBytes.getvalue(), public_id=tileName.replace(", ", "_"), overwrite=True, invalidate=True)
-        v = r['version']
-        print("Uploaded " + tileName)
-        indexNew[tileName.replace(", ", "_")] = v
-    index = readFile("index.json")
-    index.update(indexNew)
-    writeFile("index.json", index)
+    if __name__ == '__main__':
+        print("Loading pla")
+        p = json.loads(requests.get("https://api.npoint.io/5fcc99fc5028693a9569").text)
+        print("Loading nodes")
+        n = json.loads(requests.get("https://api.npoint.io/0db5b7881915de645ced").text)
+        print("Loading skin")
+        s = readFile("skins/default.json")
 
-app = flask.Flask('')
+        xMax, xMin, yMax, yMin = renderer.tools.plaJson_findEnds(p, n)
+        tiles = renderer.tools.lineToTiles([(xMax,yMax),(xMin,yMax),(xMax,yMin),(xMin,yMin)], 7, 7, 32)
+        ps = 15
+        tilesSplit = splitList(tiles, ps)
+        processes = []
+        try:
+            for i in range(ps): processes.append(Process(target=task, args=(tilesSplit[i], p, n, s))); processes[i].daemon = True
+            for i in range(ps): processes[i].start()
+            for i in range(ps): processes[i].join()
+        except KeyboardInterrupt:
+            for p in multiprocessing.active_children(): p.terminate()
+            sys.exit()
 
-@app.route('/', methods=['GET'])
+#app = flask.Flask('')
+
+#@app.route('/', methods=['GET'])
 def main():
     message = "je"
     return flask.render_template('index.html', message=message)
 
-@app.route('/render/', methods=['POST'])
+#@app.route('/render/', methods=['POST'])
 def render_post():
     render()
     return "Complete"
@@ -95,10 +121,11 @@ def clean():
     print(Style.RESET_ALL)
     time.sleep(30)
 
-server = Thread(target=run)
-server.start()
+#server = Thread(target=run)
+#server.start()
 
-cleaner = Thread(target=clean)
-cleaner.setDaemon(True)
-cleaner.start()
-#render()
+if __name__ == '__main__':
+    #cleaner = Thread(target=clean)
+    #cleaner.setDaemon(True)
+    #cleaner.start()
+    render()

@@ -1,0 +1,11 @@
+.replit
+pyproject.toml
+poetry.lock
+*.pyc
+tiles/*
+.vscode
+docs/_build/doctrees
+docs/_build/html
+output.png
+.env
+env.py
