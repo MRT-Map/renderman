@@ -37,16 +37,16 @@ def writeFile(dir, value):
         json.dump(value, f, indent=0)
         f.close()
 
-def task(toRender, p, n, s):
+def task(toRender, p, n, s, i):
         gc.collect()
-        tiles = renderer.render(p, n, s, 7, 7, 32, saveImages=False, verbosityLevel=1, tiles=toRender)
+        tiles = renderer.render(p, n, s, 7, 7, 32*2**1, saveImages=False, verbosityLevel=1, tiles=toRender, logPrefix=f"{i}: ")
         gc.collect()
         for tileName, tile in tiles.items():
             tileBytes = io.BytesIO()
             tile.save(tileBytes, format='PNG')
             tileBytes.name = tileName.replace(", ", "_")+".png"
             cloudinary.uploader.upload(tileBytes.getvalue(), public_id=tileName.replace(", ", "_"), overwrite=True, invalidate=True)
-            print("Uploaded " + tileName)
+            print("{i}: Uploaded " + tileName)
 
 def splitList(l, g):
         r = []
@@ -70,12 +70,12 @@ def render():
         s = readFile("skins/default.json")
 
         xMax, xMin, yMax, yMin = renderer.tools.plaJson_findEnds(p, n)
-        tiles = renderer.tools.lineToTiles([(xMax,yMax),(xMin,yMax),(xMax,yMin),(xMin,yMin)], 7, 7, 32)
-        ps = 15
+        tiles = renderer.tools.lineToTiles([(xMax,yMax),(xMin,yMax),(xMax,yMin),(xMin,yMin)], 7, 7, 32*2**1)
+        ps = 7
         tilesSplit = splitList(tiles, ps)
         processes = []
         try:
-            for i in range(ps): processes.append(Process(target=task, args=(tilesSplit[i], p, n, s))); processes[i].daemon = True
+            for i in range(ps): processes.append(Process(target=task, args=(tilesSplit[i], p, n, s, i))); processes[i].daemon = True
             for i in range(ps): processes[i].start()
             for i in range(ps): processes[i].join()
         except KeyboardInterrupt:
