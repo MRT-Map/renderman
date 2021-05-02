@@ -1,5 +1,5 @@
 import renderer
-import env
+import envp
 from threading import Thread
 import flask
 import flask_cors
@@ -21,7 +21,7 @@ init()
 cloudinary.config( 
     cloud_name = "mrt-map", 
     api_key = "128387842344516", 
-    api_secret = env.getenv("cloudinary")
+    api_secret = envp.getenv("cloudinary")
 )
 
 def readFile(dir):
@@ -39,14 +39,14 @@ def writeFile(dir, value):
 
 def task(toRender, p, n, s, i):
         gc.collect()
-        tiles = renderer.render(p, n, s, 7, 7, 32*2**1, saveImages=False, verbosityLevel=1, tiles=toRender, logPrefix=f"{i}: ")
+        tiles = renderer.render(p, n, s, 0, 6, 32*2**2, saveImages=False, verbosityLevel=1, tiles=toRender, logPrefix=f"{i}: ")
         gc.collect()
         for tileName, tile in tiles.items():
             tileBytes = io.BytesIO()
             tile.save(tileBytes, format='PNG')
             tileBytes.name = tileName.replace(", ", "_")+".png"
             cloudinary.uploader.upload(tileBytes.getvalue(), public_id=tileName.replace(", ", "_"), overwrite=True, invalidate=True)
-            print("{i}: Uploaded " + tileName)
+            print(f"{i}: Uploaded " + tileName)
 
 def splitList(l, g):
         r = []
@@ -70,8 +70,8 @@ def render():
         s = readFile("skins/default.json")
 
         xMax, xMin, yMax, yMin = renderer.tools.plaJson_findEnds(p, n)
-        tiles = renderer.tools.lineToTiles([(xMax,yMax),(xMin,yMax),(xMax,yMin),(xMin,yMin)], 7, 7, 32*2**1)
-        ps = 7
+        tiles = renderer.tools.lineToTiles([(xMax,yMax),(xMin,yMax),(xMax,yMin),(xMin,yMin)], 0, 6, 32*2**2)
+        ps = 10
         tilesSplit = splitList(tiles, ps)
         processes = []
         try:
@@ -82,14 +82,14 @@ def render():
             for p in multiprocessing.active_children(): p.terminate()
             sys.exit()
 
-#app = flask.Flask('')
+app = flask.Flask('')
 
-#@app.route('/', methods=['GET'])
+@app.route('/', methods=['GET'])
 def main():
     message = "je"
     return flask.render_template('index.html', message=message)
 
-#@app.route('/render/', methods=['POST'])
+@app.route('/render/', methods=['POST'])
 def render_post():
     render()
     return "Complete"
@@ -121,11 +121,11 @@ def clean():
     print(Style.RESET_ALL)
     time.sleep(30)
 
-#server = Thread(target=run)
-#server.start()
+server = Thread(target=run)
+server.start()
 
 if __name__ == '__main__':
-    #cleaner = Thread(target=clean)
-    #cleaner.setDaemon(True)
-    #cleaner.start()
+    cleaner = Thread(target=clean)
+    cleaner.setDaemon(True)
+    cleaner.start()
     render()

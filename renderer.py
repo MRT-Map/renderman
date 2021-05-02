@@ -438,13 +438,13 @@ class mathtools:
         for c in range(len(coords)-1):
             dashes = mathtools.dash(coords[c][0], coords[c][1], coords[c+1][0], coords[c+1][1], d, g, o, emptyStart)
             if dashes == []: #line has no dashes
-                prev = 0 if offsets == [] else left
+                prev = 0 if offsets == [] or left == None else left
                 remnant = math.dist(coords[c], coords[c+1])
                 o = abs(g - prev - remnant)
                 left = prev + remnant
                 emptyStart = True
             elif dashes[0] == [coords[c], coords[c+1]]: #line is entirely dash
-                prev = 0 if offsets == [] else left
+                prev = 0 if offsets == [] or left == None else left
                 remnant = math.dist(coords[c], coords[c+1])
                 o = abs(d - prev - remnant)
                 left = prev + remnant
