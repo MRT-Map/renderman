@@ -1,5 +1,5 @@
 import renderer
-import envp
+import e
 from threading import Thread
 import flask
 import flask_cors
@@ -21,7 +21,7 @@ init()
 cloudinary.config( 
     cloud_name = "mrt-map", 
     api_key = "128387842344516", 
-    api_secret = envp.getenv("cloudinary")
+    api_secret = e.getenv("cloudinary")
 )
 
 def readFile(dir):
