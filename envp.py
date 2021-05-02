@@ -1,3 +1,5 @@
-import os
-def getenv(i):
-    return os.environ[i]
+def getenv(v):
+    if v == "cloudinary":
+        return "JGUabmMGRmFis7mQtnefQkrp3mI"
+    else:
+        raise KeyError
