@@ -84,7 +84,7 @@ def main() -> None:
         try:
             old_renders: list[Component] = dill.load(f)  # noqa: S301
         except EOFError:
-            old_renders = []
+            old_renders = renders
         dill.dump(renders, f)
     log.info("%s old components", len(old_renders))
 

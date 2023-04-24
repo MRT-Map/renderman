@@ -1,9 +1,8 @@
-FROM python:3.11
+FROM python:3.11-slim
 
 COPY . .
 
-RUN pip install -U pip
-RUN pip install .
+RUN pip install -U pip; pip install .; pip cache purge
 
 VOLUME ["/vol"]
 
