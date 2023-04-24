@@ -143,3 +143,4 @@ old_renders.dill
 map-data/
 poetry.lock
 .idea/
+temp/

@@ -29,7 +29,7 @@ TOKEN = os.getenv("TOKEN")
 REPO_AUTHOR = os.getenv("REPO_AUTHOR")
 REPO_NAME = os.getenv("REPO_NAME")
 
-CWD = Path.cwd() / "map-data"
+CWD = Path.cwd() / REPO_NAME
 OLD_RENDERS_FILE = (Path("/vol") if DOCKER else Path.cwd()) / "old_renders.dill"
 OLD_RENDERS_FILE.touch(exist_ok=True)
 
