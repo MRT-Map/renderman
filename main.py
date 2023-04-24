@@ -1,113 +1,138 @@
-import renderer
-import e
-from threading import Thread
-import flask
-import json
-import requests
-import cloudinary.uploader
-import cloudinary.api
+import logging
 import os
-import io
-import gc
-import sys
-import time
-import psutil
-from colorama import Fore, Style, init
-init()
+import re
+import subprocess
+from datetime import datetime, timezone
+from itertools import product
+from pathlib import Path
+from time import sleep
 
-cloudinary.config( 
-    cloud_name = "mrt-map", 
-    api_key = "483664525357319", 
-    api_secret = e.getenv("cloudinary")
+import dill
+import msgspec
+import psutil
+import ray
+from renderer.misc_types.config import Config
+from renderer.misc_types.coord import TileCoord, Vector
+
+# noinspection PyProtectedMember
+from renderer.misc_types.pla2 import Component, Pla2File, _enc_hook
+from renderer.misc_types.zoom_params import ZoomParams
+from renderer.render import MultiprocessConfig, render
+from rich.logging import RichHandler
+from rich.progress import track
+
+DOCKER = bool(os.getenv("DOCKER"))
+CWD = Path.cwd() / "map-data"
+TOKEN = os.getenv("TOKEN")
+
+CONFIG = Config(
+    zoom=ZoomParams(0, 9, 32),
+    temp_dir=Path("./temp"),
 )
 
-def readFile(dir):
-    with open(dir, "r") as f:
-        data = json.load(f)
-        f.close()
-        return data
+logging.basicConfig(
+    level="NOTSET",
+    format="%(message)s",
+    datefmt=" ",
+    handlers=[RichHandler(markup=True, show_path=False)],
+)
 
-def writeFile(dir, value):
-    with open(dir, "r+") as f:
-        f.seek(0)
-        f.truncate()
-        json.dump(value, f, indent=0)
-        f.close()
+log = logging.getLogger("rich")
 
-def splitList(l, g):
-        r = []
-        for i in range(g):
-            r.append([])
-        p = 0
-        li = 0
-        while p < len(l):
-            r[li].append(l[p])
-            li = 0 if li == len(r)-1 else li + 1
-            p += 1
-        return r
+encoder = msgspec.json.Encoder(enc_hook=_enc_hook)
 
-def render():
-    if __name__ == '__main__':
-        print("Loading pla")
-        p = json.loads(requests.get("https://api.npoint.io/5fcc99fc5028693a9569").text)
-        print("Loading nodes")
-        n = json.loads(requests.get("https://api.npoint.io/0db5b7881915de645ced").text)
-        print("Loading skin")
-        s = renderer.misc.getSkin('default')
 
-        gc.collect()
-        tiles = renderer.render(p, n, s, 0, 8, 32*2**2, saveImages=False, processes=7)
-        gc.collect()
-        for tileName, tile in tiles.items():
-            tileBytes = io.BytesIO()
-            tile.save(tileBytes, format='PNG')
-            tileBytes.name = tileName.replace(", ", "_")+".png"
-            cloudinary.uploader.upload(tileBytes.getvalue(), public_id=tileName.replace(", ", "_"), overwrite=True, invalidate=True)
-            print("Uploaded " + tileName)
+def eq(x: Component, y: Component) -> bool:
+    return encoder.encode(x) == encoder.encode(y)
 
-if __name__ == '__main__':
-    app = flask.Flask('')
 
-    @app.route('/', methods=['GET'])
-    def main():
-        message = "je"
-        return flask.render_template('index.html', message=message)
+Component.__eq__ = eq
 
-    @app.route('/render/', methods=['POST'])
-    def render_post():
-        render()
-        return "Complete"
 
-    #@app.route('/tilev/', methods=['GET'])
-    #@flask_cors.cross_origin(origin='replit.com')
-    #def tilev():
-    #    try:
-    #        v = readFile("index.json")[flask.request.args.get("t")]
-    #        response = flask.jsonify({'some': 'data'})
-    #        response.headers.add('Access-Control-Allow-Origin', '*')
-    #        return response
-    #        return str(v)
-    #    except KeyError:
-    #        flask.abort(404)
+def main() -> None:
+    if CWD.exists():
+        log.info("Pulling git repo")
+        subprocess.run("git pull".split(), cwd=CWD).check_returncode()  # noqa: S603
+    else:
+        CWD.mkdir(exist_ok=True)
+        log.info("Cloning git repo")
+        if TOKEN:
+            subprocess.run(
+                f"git clone https://{TOKEN}@github.com/mrt-map/map-data --depth 1".split()
+            ).check_returncode()  # noqa: S603
+        else:
+            subprocess.run(
+                "git clone https://github.com/mrt-map/map-data --depth 1".split()
+            ).check_returncode()  # noqa: S603
 
-    def run():
-        app.run(host="0.0.0.0", port=8080)
-        #flask_cors.CORS(app)
+    renders = []
+    for file in track((CWD / "files").glob("*"), description="Loading components"):
+        renders.extend(Pla2File.from_file(file).components)
+    renders = list({(c.namespace, c.id): c for c in renders}.values())
+    log.info("Total number of components: %s", len(renders))
 
-    def clean():
-        time.sleep(30)
-        print(Fore.YELLOW)
-        print("Before: " + str(gc.get_count()))
-        gc.collect()
-        print("After: " + str(gc.get_count()))
-        process = psutil.Process(os.getpid())
-        print(process.memory_info().rss/1000000)
-        print(Style.RESET_ALL)
-        time.sleep(30)
+    Path("./old_renders.dill").touch(exist_ok=True)
+    with Path("./old_renders.dill").open("rb+") as f:
+        try:
+            old_renders: list[Component] = dill.load(f)  # noqa: S301
+        except EOFError:
+            old_renders = []
+        dill.dump(renders, f)
+    log.info("%s old components", len(old_renders))
 
-    server = Thread(target=run)
-    server.start()
-    #cleaner = Thread(target=clean)
-    #cleaner.setDaemon(True)
-    #cleaner.start()
-    render()
+    diffs = [a for a in track(old_renders) if a not in renders] + [
+        a for a in track(renders) if a not in old_renders
+    ]
+    log.info("Found %s changes", len(diffs))
+
+    log.info("Finding tiles")
+    old_tiles = set(Component.rendered_in(diffs, CONFIG.zoom))
+    tiles = old_tiles.copy()
+    for ox, oy in track(
+        product((-1, 0, 1), (-1, 0, 1)), description="Finding more tiles", total=9
+    ):
+        if ox == 0 and oy == 0:
+            continue
+        tiles = tiles.union({TileCoord(t.x + ox, t.y + oy, t.z) for t in tiles})
+
+    renders = Pla2File(namespace="", components=renders)
+
+    log.info("Starting render in %s tiles", len(tiles))
+    render(
+        renders,
+        CONFIG,
+        save_dir=CWD / "tiles",
+        offset=Vector(0, 32),
+        tiles=tiles,
+        prepare_mp_config=MultiprocessConfig(serial=True),
+    )
+    ray.shutdown()
+
+    for tile in track((CWD / "tiles").glob("*.webp"), description="Sorting tiles"):
+        regex = re.search(r"[\\/](-?\d+), (-?\d+), (-?\d+)\.webp", str(tile))
+        if regex is None:
+            continue
+        z, x, y = regex.group(1), regex.group(2), regex.group(3)
+
+        new_path = Path(f"./tiles/{z}/{x}/{y}.webp")
+        new_dir = new_path.parent
+
+        new_dir.mkdir(parents=True, exist_ok=True)
+        new_path.unlink(missing_ok=True)
+        tile.replace(new_path)
+
+    subprocess.run("git add .".split(), cwd=CWD).check_returncode()  # noqa: S603
+    message = f"Automatic render at {datetime.now(tz=timezone.utc)}"
+    subprocess.run(
+        f"git commit -am '{message}'".split(), cwd=CWD
+    ).check_returncode()  # noqa: S603
+    subprocess.run("git push".split(), cwd=CWD).check_returncode()  # noqa: S603
+
+
+if __name__ == "__main__":
+    while True:
+        try:
+            main()
+        except Exception as e:
+            log.exception(e.__traceback__)
+        sleep(60 * 60)
