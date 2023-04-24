@@ -143,7 +143,7 @@ def main() -> None:
     subprocess.run("git add .".split(), cwd=CWD).check_returncode()  # noqa: S603
     message = f"Automatic render at {datetime.now(tz=timezone.utc)}"
     subprocess.run(
-        f"git commit -am '{message}'".split(), cwd=CWD
+        [*f"git commit -am".split(), message], cwd=CWD
     ).check_returncode()  # noqa: S603
     subprocess.run("git push".split(), cwd=CWD).check_returncode()  # noqa: S603
 
