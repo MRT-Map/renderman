@@ -11,6 +11,8 @@ Web server that hosts map tiles and renders changed tiles every hour (customisab
 
     # GitHub token
     TOKEN=<token>
+    # Optional, number of (Ray) processes that will be spawned
+    PROCESSES=<int>
     ```
 2. Run the image with `docker run -dp <host_port>:8000 --env ./.env -v <host_vol_dir>:/vol renderman`
    - `<host_port>` is the host's port

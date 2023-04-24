@@ -10,6 +10,7 @@ from time import sleep
 
 import dill
 import msgspec
+import psutil
 import ray
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -28,6 +29,7 @@ DOCKER = bool(os.getenv("DOCKER"))
 TOKEN = os.getenv("TOKEN")
 REPO_AUTHOR = os.getenv("REPO_AUTHOR")
 REPO_NAME = os.getenv("REPO_NAME")
+PROCESSES = int(os.getenv("PROCESSES") or psutil.cpu_count())
 
 CWD = Path.cwd() / REPO_NAME
 OLD_RENDERS_FILE = (Path("/vol") if DOCKER else Path.cwd()) / "old_renders.dill"
@@ -65,12 +67,12 @@ def init_repo() -> None:
         log.info("Cloning git repo")
         if TOKEN:
             subprocess.run(
-                f"git clone https://{TOKEN}@github.com/{REPO_AUTHOR}/{REPO_NAME} --depth 1".split()
-            ).check_returncode()  # noqa: S603
+                f"git clone https://{TOKEN}@github.com/{REPO_AUTHOR}/{REPO_NAME} --depth 1".split()  # noqa: S603
+            ).check_returncode()
         else:
             subprocess.run(
-                f"git clone https://github.com/{REPO_AUTHOR}/{REPO_NAME} --depth 1".split()
-            ).check_returncode()  # noqa: S603
+                f"git clone https://github.com/{REPO_AUTHOR}/{REPO_NAME} --depth 1".split()  # noqa: S603
+            ).check_returncode()
 
 
 def main() -> None:
@@ -123,6 +125,7 @@ def main() -> None:
         save_dir=CWD / "tiles",
         offset=Vector(0, 32),
         tiles=list(tiles),
+        processes=PROCESSES,
         prepare_mp_config=MultiprocessConfig(serial=True),
     )
     ray.shutdown()
@@ -143,12 +146,12 @@ def main() -> None:
     subprocess.run("git add .".split(), cwd=CWD).check_returncode()  # noqa: S603
     message = f"Automatic render at {datetime.now(tz=timezone.utc)}"
     subprocess.run(
-        [*f"git commit -am".split(), message], cwd=CWD
-    ).check_returncode()  # noqa: S603
+        [*"git commit -am".split(), message], cwd=CWD  # noqa: S603
+    ).check_returncode()
     subprocess.run("git push".split(), cwd=CWD).check_returncode()  # noqa: S603
 
 
-def web():
+def web() -> None:
     app = FastAPI()
 
     @app.get("/{z}/{x}/{y}.webp")
@@ -160,7 +163,7 @@ def web():
             b = f.read()
         return Response(content=b, media_type="image/webp")
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # noqa: S104
 
 
 if __name__ == "__main__":
