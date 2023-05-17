@@ -14,7 +14,7 @@ psutil = "^5.9.5"
 dill = "^0.3.6"
 ray = "^2.3.1"
 fastapi = "^0.95.1"
-uvicorn = "^0.21.1"
+uvicorn = "^0.22.0"
 
 [tool.poetry.group.dev.dependencies]
 pip = "^23.1.1"
