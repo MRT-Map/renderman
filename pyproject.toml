@@ -13,7 +13,7 @@ rich = "^13.6.0"
 psutil = "^5.9.5"
 dill = "^0.3.7"
 ray = "^2.7.0"
-fastapi = "^0.110.0"
+fastapi = "^0.111.0"
 uvicorn = "^0.29.0"
 
 [tool.poetry.group.dev.dependencies]
