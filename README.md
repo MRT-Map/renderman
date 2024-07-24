@@ -1,5 +1,7 @@
 ![](./.github/ren-light.png)
 
+# Renderman has been retired as we are now able to render directly on GitHub Actions
+
 Web server that hosts map tiles and renders changed tiles every hour (customisable)
 
 ## Docker Usage
